@@ -1,33 +1,39 @@
-#Saving a cvs with predictions
+###################################################################
+# ADDECODE - Preprocessing, Training and evaluation on all healthy
+###################################################################
 
-# Edges
-#th70
+# Preprocess connectomes , metadata, node features
+# Convert each subject into a pytorch graph object 
+# Trains a GATv2 model asiing 7 fold stratified CV - 10 repeats 
+# Evaluate model performance and save the model to predict on all risks
 
-# ADDECODE 
 
-    #K fold cross validation
-    #And then after already evaluating we train on all healthy subjects and save the model, to then predict on all risks on next script
 
-    # MULTI HEAD 1 for each group( metadata, graph metrics, pcas)
+#Preprocess connectomes -> Log(x+1) and Threshold
+
+# Metadata:  -> sex,genotype,systolc, diasstolic, clustering coeff, path lentgh 10 PCA (zscores)
     # Zscore normalizing global features (metadata, graph metrics, pcas)
     # Using the top 10 most age-correlated PCs, according to SPEARMAN PC trait Correlation (PCA enrichment)
     # top 10 zscored
+    # Using less metadata features(sex,genotype,systolc, diasstolic)​
     # Sex label encoded
-   
+    # (sex: Label encoded and one hot encoded (similar)​ )
+    # Using only clustering coeff and path lentgh as graph metrics​
+    # MULTI HEAD 1 for each group( metadata, graph metrics, pcas)
+
+#Node features -> FA,MD,Volume, clustering coefficient
+    # ADDED CLUSTERING COEF AS  A NODE FEATURE​
+
+#MODEL
+    #4 GATv2 layers​
+    # Residual connections between 1 and 2,2 and 3, 3 and 4​
+    # Batch norm​
+    # Concat true, heads 8​
+    # Patience 40 ​
 
 
-    #4 gnn layers​
-    #Residual connections between 1 and 2,2 and 3, 3 and 4​
-    #Batch norm​
-    #Concat true, heads 8​
-    #Patience 40 ​
-    #Using less metadata features(sex,genotype,systolc, diasstolic)​
-    #sex: Label encoded and one hot encoded (similar)​
-    #Using only clustering coeff and path lentgh as graph metrics​
-    #ADDED CLUSTERING COEF AS  A NODE FEATURE​
     
 #################  IMPORT NECESSARY LIBRARIES  ################
-
 
 import os  # For handling file paths and directories
 import pandas as pd  # For working with tabular data using DataFrames
@@ -36,13 +42,14 @@ import seaborn as sns  # For enhanced visualizations of heatmaps
 import zipfile  # For reading compressed files without extracting them
 import re  # For extracting numerical IDs using regular expressions
 
+# For reproducibility and tensors
 import torch
 import random
 import numpy as np
 
 import networkx as nx  # For graph-level metrics
 
-# === Set seed for reproducibility ===
+# Set seed for reproducibility
 def seed_everything(seed=42):
     random.seed(seed)
     np.random.seed(seed)
@@ -62,12 +69,12 @@ seed_everything(42)
 ####################### CONNECTOMES ###############################
 print("ADDECODE CONNECTOMES\n")
 
-# === Define paths ===
+# Define paths 
 zip_path = "/home/bas/Desktop/MyData/AD_DECODE/AD_DECODE_connectome_act.zip"
 directory_inside_zip = "connectome_act/"
 connectomes = {}
 
-# === Load connectome matrices from ZIP ===
+# Load connectome matrices from ZIP 
 with zipfile.ZipFile(zip_path, 'r') as z:
     for file in z.namelist():
         if file.startswith(directory_inside_zip) and file.endswith("_conn_plain.csv"):
@@ -78,14 +85,14 @@ with zipfile.ZipFile(zip_path, 'r') as z:
 
 print(f"Total connectome matrices loaded: {len(connectomes)}")
 
-# === Filter out connectomes with white matter on their file name ===
+# Filter out connectomes with white matter on their file name 
 filtered_connectomes = {k: v for k, v in connectomes.items() if "_whitematter" not in k}
 print(f"Total connectomes after filtering: {len(filtered_connectomes)}")
 
-# === Extract subject IDs from filenames ===
+#  Extract subject IDs from filenames 
 cleaned_connectomes = {}
-for k, v in filtered_connectomes.items():
-    match = re.search(r"S(\d+)", k)
+for k, v in filtered_connectomes.items():  #k: original name, v: DataFrajme with matrix
+    match = re.search(r"S(\d+)", k)  # S followed by digits
     if match:
         num_id = match.group(1).zfill(5)  # Ensure 5-digit IDs
         cleaned_connectomes[num_id] = v
@@ -99,26 +106,26 @@ print()
 
 print("ADDECODE METADATA\n")
 
-# === Load metadata CSV ===
+#Load metadata CSV 
 metadata_path = "/home/bas/Desktop/MyData/AD_DECODE/AD_DECODE_data4.xlsx"
 df_metadata = pd.read_excel(metadata_path)
 
-# === Generate standardized subject IDs → 'DWI_fixed' (e.g., 123 → '00123')
+#  Generate standardized subject IDs → 'DWI_fixed' (e.g., 123 → '00123')
 df_metadata["MRI_Exam_fixed"] = (
     df_metadata["MRI_Exam"]
-    .fillna(0)                           # Handle NaNs first
+    .fillna(0)                           # Fill NaNs 
     .astype(int)
     .astype(str)
-    .str.zfill(5)
+    .str.zfill(5)                      #Fill with zeros on the left -> 42 - 00042
 )
 
-# === Drop fully empty rows and those with missing DWI ===
+#  Drop fully empty rows and those with missing DWI 
 df_metadata_cleaned = df_metadata.dropna(how='all')                       # Remove fully empty rows
-df_metadata_cleaned = df_metadata_cleaned.dropna(subset=["MRI_Exam"])         # Remove rows without DWI
+df_metadata_cleaned = df_metadata_cleaned.dropna(subset=["MRI_Exam"])         # Remove rows without ID DWI
 
-# === Display result ===
-print(f"Metadata loaded: {df_metadata.shape[0]} rows")
-print(f"After cleaning: {df_metadata_cleaned.shape[0]} rows")
+#  Display result 
+print(f"Metadata loaded: {df_metadata.shape[0]} rows")              #Number or original rows
+print(f"After cleaning: {df_metadata_cleaned.shape[0]} rows")       #Number of rows after
 print()
 
 
@@ -129,32 +136,32 @@ print()
 
 print(" MATCHING CONNECTOMES WITH METADATA")
 
-# === Filter metadata to only subjects with connectomes available ===
+#  Filter metadata to only subjects with connectomes available 
+#  Checks if each subject's fixed ID appears in the cleaned_connectomes dictionary -> is in?
 matched_metadata = df_metadata_cleaned[
     df_metadata_cleaned["MRI_Exam_fixed"].isin(cleaned_connectomes.keys())
 ].copy()
 
 print(f"Matched subjects (metadata & connectome): {len(matched_metadata)} out of {len(cleaned_connectomes)}\n")
 
-# === Build dictionary of matched connectomes ===
+#  Build dictionary of matched connectomes 
 matched_connectomes = {
     row["MRI_Exam_fixed"]: cleaned_connectomes[row["MRI_Exam_fixed"]]
     for _, row in matched_metadata.iterrows()
 }
 
 
-# === Store matched metadata as a DataFrame for further processing ===
+#  Store matched metadata as a DataFrame for further processing 
 df_matched_connectomes = matched_metadata.copy()
 
 
 
 
+# KEEP ONLY HEALTHY SUBJECTS -> Remove AD and MCI (KEEP FAMILIAL AND NO RISK)
 
-#Remove AD and MCI
-
-# === Print risk distribution if available ===
+# Print risk distribution if available 
 if "Risk" in df_matched_connectomes.columns:
-    risk_filled = df_matched_connectomes["Risk"].fillna("NoRisk").replace(r'^\s*$', "NoRisk", regex=True)
+    risk_filled = df_matched_connectomes["Risk"].fillna("NoRisk").replace(r'^\s*$', "NoRisk", regex=True) # Nans = NoRisk
     print("Risk distribution in matched data:")
     print(risk_filled.value_counts())
 else:
@@ -165,9 +172,9 @@ print()
 
 print("FILTERING OUT AD AND MCI SUBJECTS")
 
-# === Keep only healthy control subjects ===
+#  Keep only healthy control subjects 
 df_matched_addecode_healthy = df_matched_connectomes[
-    ~df_matched_connectomes["Risk"].isin(["AD", "MCI"])
+    ~df_matched_connectomes["Risk"].isin(["AD", "MCI"])        # ~ NOT- dont have AD and MCI
 ].copy()
 
 print(f"Subjects before removing AD/MCI: {len(df_matched_connectomes)}")
@@ -175,7 +182,7 @@ print(f"Subjects after removing AD/MCI: {len(df_matched_addecode_healthy)}")
 print()
 
 
-# === Show updated 'Risk' distribution ===
+#  Show updated 'Risk' distribution 
 if "Risk" in df_matched_addecode_healthy.columns:
     risk_filled = df_matched_addecode_healthy["Risk"].fillna("NoRisk").replace(r'^\s*$', "NoRisk", regex=True)
     print("Risk distribution in matched data:")
@@ -198,6 +205,9 @@ print(f"Connectomes selected (excluding AD/MCI): {len(matched_connectomes_health
 print()
 
 
+# SUMMARY 
+
+# All
 # df_matched_connectomes:
 # → Cleaned metadata that has a valid connectome
 # → Includes AD/MCI
@@ -210,7 +220,7 @@ print()
 
 
 
-
+#  Healthy 
 # df_matched_addecode_healthy:
 # → Metadata of only healthy subjects (no AD/MCI)
 # → Subset of df_matched_connectomes
@@ -239,13 +249,13 @@ print(df_matched_addecode_healthy.head())
 
 # Fix id formats
 
-# === Fix ID format in PCA DataFrame ===
+# Fix ID format in PCA DataFrame 
 # Convert to uppercase and remove underscores → 'AD_DECODE_1' → 'ADDECODE1'
 df_pca["ID_fixed"] = df_pca["ID"].str.upper().str.replace("_", "", regex=False)
 
 
 
-# === Fix Subject format in metadata DataFrame ===
+# Fix Subject format in metadata DataFrame
 # Convert to uppercase and remove underscores → 'AD_DECODE1' → 'ADDECODE1'
 df_matched_addecode_healthy["IDRNA_fixed"] = df_matched_addecode_healthy["IDRNA"].str.upper().str.replace("_", "", regex=False)
 
@@ -256,12 +266,15 @@ df_matched_addecode_healthy["IDRNA_fixed"] = df_matched_addecode_healthy["IDRNA"
 
 print("MATCH PCA GENES WITH METADATA")
 
+# Merge metadata with PCA components looking at IDRNA_fixed= ID_fixed (subject id)
 df_metadata_PCA_healthy_withConnectome = df_matched_addecode_healthy.merge(df_pca, how="inner", left_on="IDRNA_fixed", right_on="ID_fixed")
 
+# is in - filter
+# merge - join
 
 #Numbers
 
-# === Show how many healthy subjects with PCA and connectome you have
+# Show number of healthy subjects with PCA and connectome 
 print(f" Healthy subjects with metadata connectome: {df_matched_addecode_healthy.shape[0]}")
 print()
 
@@ -278,7 +291,7 @@ healthy_with_pca_ids = set(df_metadata_PCA_healthy_withConnectome["MRI_Exam_fixe
 # Compute the difference: healthy subjects without PCA
 healthy_without_pca_ids = all_healthy_ids - healthy_with_pca_ids
 
-# Filter the original healthy metadata for those subjects
+# Filter the original healthy metadata for those subjects without pca (check)
 df_healthy_without_pca = df_matched_addecode_healthy[
     df_matched_addecode_healthy["MRI_Exam_fixed"].isin(healthy_without_pca_ids)
 ]
@@ -297,35 +310,33 @@ print(df_healthy_without_pca[["MRI_Exam_fixed", "IDRNA", "IDRNA_fixed"]])
 
 ####################### FA MD Vol #############################
 
-
-
 # === Load FA data ===
-fa_path = "/home/bas/Desktop/MyData/AD_DECODE/RegionalStats/AD_Decode_Regional_Stats/AD_Decode_studywide_stats_for_fa.txt"
+fa_path = "/home/bas/Desktop/MyData/AD_DECODE/RegionalStats/AD_Decode_Regional_Stats/AD_Decode_studywide_stats_for_fa.txt"      #Each columns is a subject
 df_fa = pd.read_csv(fa_path, sep="\t")
-df_fa = df_fa[1:]
-df_fa = df_fa[df_fa["ROI"] != "0"]
+df_fa = df_fa[1:]                                                                            #Remove header
+df_fa = df_fa[df_fa["ROI"] != "0"]                                                           #Remove invalid region (first row 0)
 df_fa = df_fa.reset_index(drop=True)
-subject_cols_fa = [col for col in df_fa.columns if col.startswith("S")]
-df_fa_transposed = df_fa[subject_cols_fa].transpose()
-df_fa_transposed.columns = [f"ROI_{i+1}" for i in range(df_fa_transposed.shape[1])]
+subject_cols_fa = [col for col in df_fa.columns if col.startswith("S")]                      # Select columns
+df_fa_transposed = df_fa[subject_cols_fa].transpose()                                        # Transposes - each row is a subject now
+df_fa_transposed.columns = [f"ROI_{i+1}" for i in range(df_fa_transposed.shape[1])]          #Rename columns -> ROI_1 - ROI_84
 df_fa_transposed.index.name = "subject_id"
 df_fa_transposed = df_fa_transposed.astype(float)
 
 import re
 
 # Clean and deduplicate FA subjects based on numeric ID (e.g. "02842")
-cleaned_fa = {}
+cleaned_fa = {}              #clean subjects dic
 
-for subj in df_fa_transposed.index:
-    match = re.search(r"S(\d{5})", subj)
+for subj in df_fa_transposed.index:                  # go through all subjects    
+    match = re.search(r"S(\d{5})", subj)             #get 5 digits
     if match:
-        subj_id = match.group(1)
-        if subj_id not in cleaned_fa:
-            cleaned_fa[subj_id] = df_fa_transposed.loc[subj]
+        subj_id = match.group(1)                     # extract digits
+        if subj_id not in cleaned_fa:                 #Avoid duplicates
+            cleaned_fa[subj_id] = df_fa_transposed.loc[subj]   #save row 
 
 # Convert cleaned data to DataFrame
-df_fa_transposed_cleaned = pd.DataFrame.from_dict(cleaned_fa, orient="index")
-df_fa_transposed_cleaned.index.name = "subject_id"
+df_fa_transposed_cleaned = pd.DataFrame.from_dict(cleaned_fa, orient="index")  # Dic-> dataframe, each row is a subject
+df_fa_transposed_cleaned.index.name = "subject_id"         
 
 
 
@@ -397,10 +408,10 @@ for subj_id in df_fa_transposed_cleaned.index:
         vol = torch.tensor(df_vol_transposed_cleaned.loc[subj_id].values, dtype=torch.float)
 
         # Stack the 3 modalities: [84 nodes, 3 features (FA, MD, Vol)]
-        stacked = torch.stack([fa, md, vol], dim=1)
+        stacked = torch.stack([fa, md, vol], dim=1)                       #tensor with 84 nodes and 3 node features
 
         # Store with subject ID as key
-        multimodal_features_dict[subj_id] = stacked
+        multimodal_features_dict[subj_id] = stacked                       # saves tensr in the dic with subject id as the key
 
 
 
@@ -411,7 +422,7 @@ fa_md_vol_ids = set(multimodal_features_dict.keys())
 pca_ids = set(df_metadata_PCA_healthy_withConnectome["MRI_Exam_fixed"])
 connectome_ids = set(matched_connectomes_healthy_addecode.keys())
 
-final_overlap = fa_md_vol_ids & pca_ids & connectome_ids
+final_overlap = fa_md_vol_ids & pca_ids & connectome_ids                               #SUBJECTS THAT HAVE ALL
 
 print(" Subjects with FA/MD/Vol + PCA + Connectome:", len(final_overlap))
 
@@ -437,21 +448,23 @@ print()
 
 
 
-# === Normalization node-wise  ===
+#  Normalization node-wise  
 def normalize_multimodal_nodewise(feature_dict):
     all_features = torch.stack(list(feature_dict.values()))  # [N_subjects, 84, 3]
     means = all_features.mean(dim=0)  # [84, 3]
-    stds = all_features.std(dim=0) + 1e-8
+    stds = all_features.std(dim=0) + 1e-8            # Avoid division by 0
     return {subj: (features - means) / stds for subj, features in feature_dict.items()}
 
 # Normalization
 normalized_node_features_dict = normalize_multimodal_nodewise(multimodal_features_dict)
 
+# Normalize substracting the mean and dividing by the std
+# Mean and std per node and channel
 
 
 
 
-# === Function to compute clustering coefficient per node ===
+#  Function to compute clustering coefficient per node 
 def compute_nodewise_clustering_coefficients(matrix):
     """
     Compute clustering coefficient for each node in the connectome matrix.
@@ -462,15 +475,15 @@ def compute_nodewise_clustering_coefficients(matrix):
     Returns:
         torch.Tensor: Tensor of shape [84, 1] with clustering coefficient per node
     """
-    G = nx.from_numpy_array(matrix.to_numpy())
+    G = nx.from_numpy_array(matrix.to_numpy())  -> graph
 
     # Assign weights from matrix to the graph
     for u, v, d in G.edges(data=True):
         d["weight"] = matrix.iloc[u, v]
 
     # Compute clustering coefficient per node
-    clustering_dict = nx.clustering(G, weight="weight")
-    clustering_values = [clustering_dict[i] for i in range(len(clustering_dict))]
+    clustering_dict = nx.clustering(G, weight="weight")   # values close to 1 mean neighbours are close 
+    clustering_values = [clustering_dict[i] for i in range(len(clustering_dict))]      #convert dic to list
 
     # Convert to tensor [84, 1]
     return torch.tensor(clustering_values, dtype=torch.float).unsqueeze(1)
@@ -482,32 +495,33 @@ def compute_nodewise_clustering_coefficients(matrix):
 
 
 
-# ===============================
-# Step 9: Threshold and Log Transform Connectomes
-# ===============================
+############ Threshold and Log Transform Connectomes ###############
+
 
 import numpy as np
 import pandas as pd
 
-# --- Define thresholding function ---
+#  Define thresholding function 
 def threshold_connectome(matrix, percentile=100):
     """
     Apply percentile-based thresholding to a connectome matrix.
     """
     matrix_np = matrix.to_numpy()
-    mask = ~np.eye(matrix_np.shape[0], dtype=bool)
+    mask = ~np.eye(matrix_np.shape[0], dtype=bool) #exclude diagnal
     values = matrix_np[mask]
-    threshold_value = np.percentile(values, 100 - percentile)
-    thresholded_np = np.where(matrix_np >= threshold_value, matrix_np, 0)
+    threshold_value = np.percentile(values, 100 - percentile)    # eg 100-70  = 30
+    thresholded_np = np.where(matrix_np >= threshold_value, matrix_np, 0) #keep values over threshold eg 30-> keep 70
     return pd.DataFrame(thresholded_np, index=matrix.index, columns=matrix.columns)
 
-# --- Apply threshold + log transform ---
+# Apply threshold + log transform 
 log_thresholded_connectomes = {}
 for subject, matrix in matched_connectomes_healthy_addecode.items():
     thresholded_matrix = threshold_connectome(matrix, percentile=70)
     log_matrix = np.log1p(thresholded_matrix)
     log_thresholded_connectomes[subject] = pd.DataFrame(log_matrix, index=matrix.index, columns=matrix.columns)
 
+# Keep 70% strongest cnnections, ( over the 30% )
+# Set all weaker connectins to 0
 
 
 ##################### MATRIX TO GRAPH FUNCTION #######################
@@ -517,66 +531,66 @@ import numpy as np
 from torch_geometric.data import Data
 
 
-# === Function to convert a connectome matrix into a graph with multimodal node features ===
+#  Function to convert a connectome matrix into a graph with multimodal node features 
 def matrix_to_graph(matrix, device, subject_id, node_features_dict):
-    indices = np.triu_indices(84, k=1)
-    edge_index = torch.tensor(np.vstack(indices), dtype=torch.long, device=device)
-    edge_attr = torch.tensor(matrix.values[indices], dtype=torch.float, device=device)
+    indices = np.triu_indices(84, k=1)  # get upper triuangle, exluding diagonal
+    edge_index = torch.tensor(np.vstack(indices), dtype=torch.long, device=device)  #positions of the edges
+    edge_attr = torch.tensor(matrix.values[indices], dtype=torch.float, device=device) # edge weights from the upper triangle
 
-    # === Get FA, MD, Volume features [84, 3]
+    #  Get FA, MD, Volume features [84, 3]
     node_feats = node_features_dict[subject_id]
 
-    # === Compute clustering coefficient per node [84, 1]
+    #  Compute clustering coefficient per node [84, 1]
     clustering_tensor = compute_nodewise_clustering_coefficients(matrix)
 
-    # === Concatenate and scale [84, 4]
-    full_node_features = torch.cat([node_feats, clustering_tensor], dim=1)
-    node_features = 0.5 * full_node_features.to(device)
+    #  Concatenate and scale [84, 4]
+    full_node_features = torch.cat([node_feats, clustering_tensor], dim=1)   #concatenate fa md vol woith node wise clustering coef
+    node_features = 0.5 * full_node_features.to(device)  #scale
 
     return edge_index, edge_attr, node_features
 
 
 
 
+################ Compute Graph Metrics and Add to Metadata ##############################
 
-
-# ===============================
-# Step 10: Compute Graph Metrics and Add to Metadata
-# ===============================
 
 import networkx as nx
 
-# --- Define graph metric functions ---
+# Define graph metric functions 
 def compute_clustering_coefficient(matrix):
-    G = nx.from_numpy_array(matrix.to_numpy())
-    for u, v, d in G.edges(data=True):
+    G = nx.from_numpy_array(matrix.to_numpy())  #convert connectome matrix to networkx graph
+    for u, v, d in G.edges(data=True):          # add weights from the matrix to graph edges
         d["weight"] = matrix.iloc[u, v]
     return nx.average_clustering(G, weight="weight")
 
 def compute_path_length(matrix):
     G = nx.from_numpy_array(matrix.to_numpy())
-    for u, v, d in G.edges(data=True):
+    for u, v, d in G.edges(data=True):             #Define distance as the inverse of weight
         weight = matrix.iloc[u, v]
         d["distance"] = 1.0 / weight if weight > 0 else float("inf")
-    if not nx.is_connected(G):
+    if not nx.is_connected(G):                      # If graph is not connected keep the largest connected component
         G = G.subgraph(max(nx.connected_components(G), key=len)).copy()
     try:
         return nx.average_shortest_path_length(G, weight="distance")
     except:
         return float("nan")
 
-# --- Assign computed metrics to metadata ---
+# Assign computed metrics to metadata
+
 addecode_healthy_metadata_pca = df_metadata_PCA_healthy_withConnectome.reset_index(drop=True)
 addecode_healthy_metadata_pca["Clustering_Coeff"] = np.nan
 addecode_healthy_metadata_pca["Path_Length"] = np.nan
 
+#Loop through each subject to compute metrics
 for subject, matrix_log in log_thresholded_connectomes.items():
     try:
-        clustering = compute_clustering_coefficient(matrix_log)
-        path = compute_path_length(matrix_log)
+        clustering = compute_clustering_coefficient(matrix_log) #Global clustering
+        path = compute_path_length(matrix_log)                   #path lentgh
+        #Assign values to metadata
         addecode_healthy_metadata_pca.loc[
             addecode_healthy_metadata_pca["MRI_Exam_fixed"] == subject, "Clustering_Coeff"
-        ] = clustering
+        ] = clustering                                                                     #assigns the clustering values calculated to the column  Clustering_Coeff for each subject   
         addecode_healthy_metadata_pca.loc[
             addecode_healthy_metadata_pca["MRI_Exam_fixed"] == subject, "Path_Length"
         ] = path
@@ -584,36 +598,41 @@ for subject, matrix_log in log_thresholded_connectomes.items():
         print(f"Failed to compute metrics for subject {subject}: {e}")
 
 
-# ===============================
-# Step 11: Normalize Metadata and PCA Columns
-# ===============================
+########################  Normalize Metadata and PCA Columns #################################
 
-from sklearn.preprocessing import LabelEncoder
+
+from sklearn.preprocessing import LabelEncoder  
 from scipy.stats import zscore
 
 #label encoding sex
 le_sex = LabelEncoder()
 addecode_healthy_metadata_pca["sex_encoded"] = le_sex.fit_transform(addecode_healthy_metadata_pca["sex"].astype(str))
+#Transforms sex column to numbers M-0 F-1
 
-
-# --- Label encode genotype ---
+#  Label encode genotype 
 le = LabelEncoder()
 addecode_healthy_metadata_pca["genotype"] = le.fit_transform(addecode_healthy_metadata_pca["genotype"].astype(str))
+# APOE23 - 0
+# APOE33 - 1
+# APOE34 - 2
+# APOE44 - 3
 
-# --- Normalize numerical and PCA columns ---
+
+#  Normalize numerical and PCA columns 
 numerical_cols = ["Systolic", "Diastolic", "Clustering_Coeff", "Path_Length"]
-pca_cols = ['PC12', 'PC7', 'PC13', 'PC5', 'PC21', 'PC14', 'PC1', 'PC16', 'PC17', 'PC3'] #Top 10 from SPEARMAN  corr (enrich)
+pca_cols = ['PC12', 'PC7', 'PC13', 'PC5', 'PC21', 'PC14', 'PC1', 'PC16', 'PC17', 'PC3'] # Top 10 from SPEARMAN  corr (enrich)
 
+#Zscore norm to numerical metadata and pca 
 addecode_healthy_metadata_pca[numerical_cols] = addecode_healthy_metadata_pca[numerical_cols].apply(zscore)
 addecode_healthy_metadata_pca[pca_cols] = addecode_healthy_metadata_pca[pca_cols].apply(zscore)
 
 
 
-# ===============================
-# Step 12: Build Metadata, graph metrics and PCA Tensors
-# ===============================
 
-# === 1. Demographic tensor (systolic, diastolic, sex one-hot, genotype) ===
+####################  Build Metadata, graph metrics and PCA Tensors ##############################
+
+
+# 1. Demographic tensor (systolic, diastolic, sex one-hot, genotype) 
 subject_to_demographic_tensor = {
     row["MRI_Exam_fixed"]: torch.tensor([
         row["Systolic"],
@@ -624,7 +643,7 @@ subject_to_demographic_tensor = {
     for _, row in addecode_healthy_metadata_pca.iterrows()
 }
 
-# === 2. Graph metric tensor (clustering coefficient, path length) ===
+# 2. Graph metric tensor (clustering coefficient, path length) 
 subject_to_graphmetric_tensor = {
     row["MRI_Exam_fixed"]: torch.tensor([
         row["Clustering_Coeff"],
@@ -633,7 +652,7 @@ subject_to_graphmetric_tensor = {
     for _, row in addecode_healthy_metadata_pca.iterrows()
 }
 
-# === 3. PCA tensor (top 10 age-correlated components) ===
+#  3. PCA tensor (top 10 age-correlated components) 
 subject_to_pca_tensor = {
     row["MRI_Exam_fixed"]: torch.tensor(row[pca_cols].values.astype(np.float32))
     for _, row in addecode_healthy_metadata_pca.iterrows()
@@ -645,11 +664,11 @@ subject_to_pca_tensor = {
 #################  CONVERT MATRIX TO GRAPH  ################
 
 graph_data_list_addecode = []
-final_subjects_with_all_data = []  # Para verificar qué sujetos sí se procesan
+final_subjects_with_all_data = []  # verify
 
 for subject, matrix_log in log_thresholded_connectomes.items():
     try:
-        # === Skip if any required input is missing ===
+        #  Skip if any required input is missing 
         if subject not in subject_to_demographic_tensor:
             continue
         if subject not in subject_to_graphmetric_tensor:
@@ -659,12 +678,12 @@ for subject, matrix_log in log_thresholded_connectomes.items():
         if subject not in normalized_node_features_dict:
             continue
 
-        # === Convert matrix to graph (node features: FA, MD, Vol, clustering)
+        #  Convert matrix to graph (node features: FA, MD, Vol, clustering)
         edge_index, edge_attr, node_features = matrix_to_graph(
             matrix_log, device=torch.device("cpu"), subject_id=subject, node_features_dict=normalized_node_features_dict
         )
 
-        # === Get target age
+        #  Get target age
         age_row = addecode_healthy_metadata_pca.loc[
             addecode_healthy_metadata_pca["MRI_Exam_fixed"] == subject, "age"
         ]
@@ -672,28 +691,28 @@ for subject, matrix_log in log_thresholded_connectomes.items():
             continue
         age = torch.tensor([age_row.values[0]], dtype=torch.float)
 
-        # === Concatenate global features (demographics + graph metrics + PCA)
+        #  Concatenate global features (demographics + graph metrics + PCA)
         demo_tensor = subject_to_demographic_tensor[subject]     # [5]
         graph_tensor = subject_to_graphmetric_tensor[subject]    # [2]
         pca_tensor = subject_to_pca_tensor[subject]              # [10]
         
         global_feat = torch.cat([demo_tensor, graph_tensor, pca_tensor], dim=0)  # [16]
 
-        # === Create graph object
+        #  Create graph object
         data = Data(
-            x=node_features,
-            edge_index=edge_index,
+            x=node_features,                                                     # Node features [84,4]
+            edge_index=edge_index,                                               # Con
             edge_attr=edge_attr,
             y=age,
             global_features=global_feat.unsqueeze(0)  # Shape: (1, 16)
         )
         data.subject_id = subject  # Track subject
 
-        # === Store graph
+        #  Store graph
         graph_data_list_addecode.append(data)
         final_subjects_with_all_data.append(subject)
         
-        # === Print one example to verify shapes and content
+        #  Print one example to verify shapes and content
         if len(graph_data_list_addecode) == 1:
             print("\n Example PyTorch Geometric Data object:")
             print("→ Node features shape:", data.x.shape)           # Ecpected: [84, 4]
@@ -706,7 +725,7 @@ for subject, matrix_log in log_thresholded_connectomes.items():
     except Exception as e:
         print(f" Failed to process subject {subject}: {e}")
 
-# === Save processed graph data for reuse
+#  Save processed graph data for reuse
 import torch
 torch.save(graph_data_list_addecode, "graph_data_list_addecode.pt")
 print("Saved: graph_data_list_addecode.pt")
@@ -714,7 +733,7 @@ print("Saved: graph_data_list_addecode.pt")
 
 # Check
 
-# === Report stats ===
+#  Report stats
 print()
 expected = set(subject_to_pca_tensor.keys())
 actual = set(final_subjects_with_all_data)
