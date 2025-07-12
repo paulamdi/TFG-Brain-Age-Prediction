@@ -7,20 +7,20 @@ This repository contains the full pipeline for preprocessing, training, and eval
 ## 1. Overview
 - **Data**: Structural connectomes (84×84), regional node features (FA, MD, Volume), demographics, graph metrics, PCA gene components.
 - **Model**: 4-layer GATv2 with residual connections and batch normalization. Multi-head MLPs process global features.
-- **Evaluation**: 7-fold stratified cross-validation × 10 repeats, with performance metrics (MAE, R²) and final model training.
-
+- **Evaluation**: 7-fold stratified cross-validation × 10 repeats, with performance metrics (MAE,RMSE, R²) 
 
 ## 2. Data Preprocessing
+Only healthy controls retained (excludes AD and MCI).
+
 ### 2.1 Connectomes
 - Loaded from ZIP archive.
-- White matter variants excluded.
+- White matter on name file excluded
 - Log(x+1) transformation applied.
 - 70% strongest connections retained (percentile thresholding).
 
 ### 2.2 Metadata
 - Extracted: `sex`, `genotype`, `systolic`, `diastolic`.
 - Sex and genotype label-encoded.
-- Only healthy controls retained (excludes AD and MCI).
 - Normalized using z-scores.
 
 ### 2.3 Regional Node Features
@@ -87,7 +87,7 @@ This repository contains the full pipeline for preprocessing, training, and eval
 
 ## 7. Final Model
 - Trained on **all healthy subjects** (no validation split)
-- Fixed training: 100 epochs (based on early stopping analysis)
-- Final model saved as:
+- Fixed training: 100 epochs (based on previous early stopping analysis)
+- Final model saved 
 
 
