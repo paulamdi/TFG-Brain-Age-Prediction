@@ -14,7 +14,7 @@ Explores **brain age prediction** from structural and functional connectomes usi
 ##  Repository Structure
 
 ### `ADDECODE Baseline`
-> Brain age prediction on the **AD-DECODE** dataset using only **healthy subjects**.
+ Brain age prediction on the **AD-DECODE** dataset using only **healthy subjects**.
 - Full preprocessing pipeline (connectomes + metadata).
 - Training GATv2 with node features (FA, MD, Volume) and global features (sex, APOE, BP, graph metrics, PCA genes).
 - 7-fold stratified CV, 10 repetitions, early stopping.
@@ -22,20 +22,20 @@ Explores **brain age prediction** from structural and functional connectomes usi
 
 
 ### `ADNI Best`
-> Training and evaluation on the **ADNI** dataset (70–90 y/o healthy subjects).
+ Training and evaluation on the **ADNI** dataset (70–90 y/o healthy subjects).
 - Preprocessing of structural connectomes and regional statistics (FA, Volume).
 - GATv2 model training with global features (sex, genotype, graph metrics).
 
 
 ### `Pretrain ADNI-ADDECODE`
-> Transfer learning pipeline.
+ Transfer learning pipeline.
 - Uses pretrained ADNI model on all healthy saves it
 - Fine-tunes on AD-DECODE data.
 
 
 
 ### `ADRC Bimodal Best`
-> Full **multimodal brain age prediction** using **ADRC** dataset with both **DTI and fMRI** connectomes.
+ Full **multimodal brain age prediction** using **ADRC** dataset with both **DTI and fMRI** connectomes.
 - Dual GATv2 architecture (separate streams for DTI and fMRI).
 - Shared node features (FA, Volume), graph metrics (clustering, path length, efficiency), and metadata (sex, genotype).
 - Training with 7-fold CV, final model inference on risk subjects (MCI, AD).
@@ -44,7 +44,7 @@ Explores **brain age prediction** from structural and functional connectomes usi
 
 
 ### `SHAP-CL`
-> **SHAP Contrastive Learning (SHAP-CL)** to improve interpretability.
+ **SHAP Contrastive Learning (SHAP-CL)** to improve interpretability.
 - Trains the GATv2 model using only healthy control subjects from the AD-DECODE dataset
 - Applies the trained model to all subjects (healthy + at-risk) to compute SHAP values for global features.
 - Computes cosine similarity between all subject pairs and constructs triplets using the **top-k strategy**
@@ -54,7 +54,7 @@ Explores **brain age prediction** from structural and functional connectomes usi
 
 
 ### `Analysis Example`
-> Example of **post-hoc analysis and plotting**.
+ Example of **post-hoc analysis and plotting**.
 - BAG and corrected BAG (cBAG) computation and violin plots comparing BAG/cBAG across clinical risk groups, APOE...
 - Performs non-parametric statistical tests (Kruskal-Wallis, Mann-Whitney) to assess group differences in BAG.
 - Computes classification performance metrics (AUC, Accuracy, Precision, Recall) based on cBAG thresholds.
@@ -70,4 +70,4 @@ Explores **brain age prediction** from structural and functional connectomes usi
 
 
 ### `Subjects count`
-> Count and filtering of subjects across datasets.
+ Count and filtering of subjects across datasets.
