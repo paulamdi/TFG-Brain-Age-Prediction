@@ -78,8 +78,8 @@ The goal is to **reuse the structural representations learned from ADNI**, while
 
 By loading pretrained GATv2 weights from ADNI, the model starts with a strong initialization that:
 
-- Encodes structural aging patterns found in healthy adults
-- Captures useful representations of connectome topology (via attention)
+- Encodes structural aging patterns 
+- Captures useful representations of connectome topology 
 - Reduces the risk of overfitting on small target datasets (like AD-DECODE)
 
 The fine-tuning phase allows the model to **refine these representations**, adjusting them based on:
@@ -88,6 +88,8 @@ The fine-tuning phase allows the model to **refine these representations**, adju
 - **Additional global context** (blood pressure, PCA genes)
 - **Wider and younger age ranges**
 - **Potential pathology-related variation**
+
+
 
 
 
