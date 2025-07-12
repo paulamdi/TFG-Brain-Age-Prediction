@@ -5,14 +5,12 @@ This repository contains the full pipeline for preprocessing, training, and eval
 
 
 ## 1. Overview
-
 - **Data**: Structural connectomes (84×84), regional node features (FA, MD, Volume), demographics, graph metrics, PCA gene components.
 - **Model**: 4-layer GATv2 with residual connections and batch normalization. Multi-head MLPs process global features.
 - **Evaluation**: 7-fold stratified cross-validation × 10 repeats, with performance metrics (MAE, R²) and final model training.
 
 
 ## 2. Data Preprocessing
-
 ### 2.1 Connectomes
 - Loaded from ZIP archive.
 - White matter variants excluded.
@@ -44,7 +42,6 @@ This repository contains the full pipeline for preprocessing, training, and eval
 
 
 ## 3. Graph Construction
-
 - Each subject converted into a PyTorch Geometric `Data` object:
   - **Node features**: FA, MD, Volume, clustering (shape: `[84, 4]`)
   - **Edge features**: 70%-thresholded, log-transformed connectome
@@ -54,7 +51,6 @@ This repository contains the full pipeline for preprocessing, training, and eval
 
 
 ## 4. Model Architecture
-
 - **Node encoder**: Linear(4 → 64) + ReLU + Dropout
 - **GATv2 layers**: 4 layers, 8 heads, with residual connections and batch norm
 - **Global features heads**:
@@ -66,7 +62,6 @@ This repository contains the full pipeline for preprocessing, training, and eval
   - Final output: predicted brain age (1 scalar)
 
 ## 5. Training Configuration
-
 - **Loss**: SmoothL1Loss (Huber loss, β = 1)
 - **Optimizer**: AdamW (`lr = 0.002`, `weight_decay = 1e-4`)
 - **Scheduler**: StepLR (`step_size = 20`, `gamma = 0.5`)
@@ -78,7 +73,6 @@ This repository contains the full pipeline for preprocessing, training, and eval
 
 
 ## 6. Evaluation
-
 ### 6.1 Metrics
 - Mean Absolute Error (MAE)
 - Root Mean Squared Error (RMSE)
@@ -92,7 +86,6 @@ This repository contains the full pipeline for preprocessing, training, and eval
 
 
 ## 7. Final Model
-
 - Trained on **all healthy subjects** (no validation split)
 - Fixed training: 100 epochs (based on early stopping analysis)
 - Final model saved as:
