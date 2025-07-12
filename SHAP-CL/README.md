@@ -8,7 +8,15 @@ The SHAP-guided contrastive learning pipeline is organized into scripts, each co
 
 ###  `7.0 SHAP cvs gobal features.py`
 - Applies the trained model to all subjects (healthy + at-risk) to compute SHAP values for global features.
-- SHAP values are stored in a CSV file .
+- SHAP values are stored in a CSV file
+
+- **Wrapper for SHAP**: A `GlobalOnlyModel` wrapper is used to isolate the global features branch (e.g., demographics, graph metrics, PCA genes).
+
+- **SHAP computation**:
+  - SHAP values are computed for all global features of each subject.
+  - Results are stored in a list along with subject metadata (ID, diagnosis, sex, genotype, etc.).
+  -  Saves a CSV file with per-subject SHAP values and metadata:
+
 
 ### `7.1c similarity triplets top k.py`
 - Loads the SHAP CSV file and z-score normalizes SHAP vectors.
