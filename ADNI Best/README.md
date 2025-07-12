@@ -1,4 +1,4 @@
-# Brain Age Prediction from ADNI Connectomes using GATv2 (BEST ADNI not theone used for pretraining)
+# Brain Age Prediction from ADNI Connectomes using GATv2 (BEST ADNI not the one used for pretraining)
 
 This repository implements a full pipeline for brain age prediction using **structural connectomes** from the **ADNI** dataset. The model leverages **Graph Attention Networks (GATv2)** with multimodal node features (FA, Volume) and global metadata (sex, genotype, graph metrics). The project includes preprocessing, training with stratified cross-validation, and final pretraining for transfer learning.
 
