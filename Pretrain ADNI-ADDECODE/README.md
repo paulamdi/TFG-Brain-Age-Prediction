@@ -38,6 +38,62 @@ The ADNI model mirrors the AD-DECODE model, but **without**:
   - Global Clustering Coefficient
   - Path Length
 
+
+After CV, the model was retrained on **all healthy ADNI subjects** and saved 
+
+
+
+## 2_Full Fine Tuning.py - AD-DECODE Full Fine-Tuning 
+
+This script performs **full fine-tuning** on the AD-DECODE dataset, starting from a model **pretrained on ADNI**.
+
+The goal is to **reuse the structural representations learned from ADNI**, while allowing the model to adapt to **new features unique to AD-DECODE**, such as Mean Diffusivity, blood pressure, and transcriptomic PCA components.
+
+
+
+### Transfer Learning Strategy
+
+1. **Initialization**:
+   - The model is initialized with the weights from the GATv2 model trained on healthy ADNI subjects.
+
+2. **Selective loading**:
+   - **Only compatible layers are loaded** from the pretrained model.
+   - The following layers are **excluded**:
+     - `node_embed`: because AD-DECODE uses **3 node features** (FA, MD, Volume), while ADNI only used 2.
+     - `fc.0`: the input dimensionality of the final MLP has changed (AD-DECODE includes more global features).
+
+3. **Weight transfer**:
+   - All other layers — including the 4 GATv2 layers and remaining parts of the MLP — **retain the pretrained weights** from ADNI.
+   - These weights encode generalizable structural patterns related to healthy brain aging.
+
+4. **Full Fine-Tuning (No Freezing)**:
+   - **All layers are left trainable** (`unfrozen`), allowing the model to:
+     - Retain useful information learned from ADNI
+     - **Adapt to AD-DECODE-specific inputs**, such as disease-related variation, blood pressure effects, and gene expression patterns
+     - Improve age prediction on a broader age range and population (AD-DECODE includes young to old subjects, and at-risk individuals)
+
+
+
+###  What the model learns from ADNI
+
+By loading pretrained GATv2 weights from ADNI, the model starts with a strong initialization that:
+
+- Encodes structural aging patterns found in healthy adults
+- Captures useful representations of connectome topology (via attention)
+- Reduces the risk of overfitting on small target datasets (like AD-DECODE)
+
+The fine-tuning phase allows the model to **refine these representations**, adjusting them based on:
+
+- **New node features** (MD)
+- **Additional global context** (blood pressure, PCA genes)
+- **Wider and younger age ranges**
+- **Potential pathology-related variation**
+
+
+
+
+On both:
+
 ###  Preprocessing:
 
 - Connectomes:
@@ -63,8 +119,3 @@ The ADNI model mirrors the AD-DECODE model, but **without**:
 - Loss: SmoothL1Loss  
 - Optimizer: AdamW  
 - Scheduler: StepLR  
-
-After CV, the model was retrained on **all healthy ADNI subjects** and saved 
-
-
-
