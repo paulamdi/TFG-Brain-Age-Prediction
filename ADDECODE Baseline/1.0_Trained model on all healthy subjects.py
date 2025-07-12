@@ -701,10 +701,10 @@ for subject, matrix_log in log_thresholded_connectomes.items():
         #  Create graph object
         data = Data(
             x=node_features,                                                     # Node features [84,4]
-            edge_index=edge_index,                                               # Con
-            edge_attr=edge_attr,
-            y=age,
-            global_features=global_feat.unsqueeze(0)  # Shape: (1, 16)
+            edge_index=edge_index,                                               # Connections index[2,num_edges] indicates what nodes are connected, all connections without repeating
+            edge_attr=edge_attr,                                                 # weights of connections [num_edges]
+            y=age,                                                               # target
+            global_features=global_feat.unsqueeze(0)                             # Shape: (1, 17)
         )
         data.subject_id = subject  # Track subject
 
@@ -772,7 +772,7 @@ print(f"Using device: {device}")
 
 ######################  DEFINE MODEL  #########################
 
-# MULTIHEAD-> one head for each global feature
+# MULTIHEAD-> one head for each TYPE OF  global feature
 
 import torch
 import torch.nn as nn
@@ -783,7 +783,7 @@ class BrainAgeGATv2(nn.Module):
     def __init__(self, global_feat_dim):
         super(BrainAgeGATv2, self).__init__()
 
-        # === NODE FEATURES EMBEDDING ===
+        #NODE FEATURES EMBEDDING
         # Each brain region (node) has 4 features: FA, MD, Volume, Clustering coefficient.
         # These are embedded into a higher-dimensional representation (64).
         self.node_embed = nn.Sequential(
@@ -793,9 +793,9 @@ class BrainAgeGATv2(nn.Module):
             
         )
 
-        # === GATv2 LAYERS WITH EDGE ATTRIBUTES ===
+        # GATv2 LAYERS WITH EDGE ATTRIBUTES
         # These layers use the connectome (edge weights) to propagate information.
-        # edge_dim=1 means each edge has a scalar weight (from the functional connectome).
+        # edge_dim=1 means each edge has ONE scalar weight .
         self.gnn1 = GATv2Conv(64, 16, heads=8, concat=True, edge_dim=1)
         self.bn1 = BatchNorm(128)  # Normalize output (16*8 = 128 channels)
 
@@ -810,7 +810,7 @@ class BrainAgeGATv2(nn.Module):
 
         self.dropout = nn.Dropout(0.25)  # Regularization
 
-        # === GLOBAL FEATURE BRANCHES ===
+        #  GLOBAL FEATURE BRANCHES 
         # These process metadata that is not node-specific, grouped into 3 categories.
 
         # Demographic + physiological metadata (sex, systolic, diastolic, genotype)
@@ -840,7 +840,7 @@ class BrainAgeGATv2(nn.Module):
             nn.ReLU()
         )
 
-        # === FINAL FUSION MLP ===
+        # FINAL FUSION MLP 
         # Combines graph-level information from GNN and global features
         self.fc = nn.Sequential(
             nn.Linear(128 + 64, 128),  # 128 from GNN output + 64 from metadata branches
@@ -852,43 +852,43 @@ class BrainAgeGATv2(nn.Module):
         )
 
     def forward(self, data):
-        # === GRAPH INPUTS ===
+        #  GRAPH INPUTS 
         x = data.x               # Node features: shape [num_nodes, 4]
         edge_index = data.edge_index  # Graph connectivity (edges)
         edge_attr = data.edge_attr    # Edge weights from functional connectome
 
-        # === NODE EMBEDDING ===
+        #  NODE EMBEDDING 
         x = self.node_embed(x)  # Embed the node features
 
-        # === GNN BLOCK 1 ===
+        #  GNN BLOCK 1 
         x = self.gnn1(x, edge_index, edge_attr=edge_attr)  # Attention using connectome weights
         x = self.bn1(x)
         x = F.relu(x)
 
-        # === GNN BLOCK 2 with residual connection ===
+        #  GNN BLOCK 2 with residual connection
         x_res1 = x  # Save for residual
         x = self.gnn2(x, edge_index, edge_attr=edge_attr)
         x = self.bn2(x)
         x = F.relu(x + x_res1)
 
-        # === GNN BLOCK 3 with residual ===
+        #  GNN BLOCK 3 with residual 
         x_res2 = x
         x = self.gnn3(x, edge_index, edge_attr=edge_attr)
         x = self.bn3(x)
         x = F.relu(x + x_res2)
 
-        # === GNN BLOCK 4 with residual ===
+        #  GNN BLOCK 4 with residual 
         x_res3 = x
         x = self.gnn4(x, edge_index, edge_attr=edge_attr)
         x = self.bn4(x)
         x = F.relu(x + x_res3)
 
-        # === POOLING ===
+        #  POOLING 
         x = self.dropout(x)
         x = global_mean_pool(x, data.batch)  # Aggregate node embeddings into graph-level representation
 
-        # === GLOBAL FEATURES ===
-        # Shape: [batch_size, 1, 16] → remove extra dimension
+        # GLOBAL FEATURES 
+        # Shape: [batch_size, 1, 16]  remove extra dimension
         global_feats = data.global_features.to(x.device).squeeze(1)
 
         # Process each global feature group
@@ -907,43 +907,41 @@ class BrainAgeGATv2(nn.Module):
 
 
 
-
+############# TRAINING AND EVAL FUNCTIONS ######################
     
     
 from torch.optim import Adam
 from torch_geometric.loader import DataLoader  # Usamos el DataLoader de torch_geometric
 
 def train(model, train_loader, optimizer, criterion):
-    model.train()
-    total_loss = 0
-    for data in train_loader:
+    model.train()  #train mode
+    total_loss = 0  #initialize
+    for data in train_loader:   #iterates through batches
         data = data.to(device)  # GPU
-        optimizer.zero_grad()
-        output = model(data).view(-1)
-        loss = criterion(output, data.y)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-    return total_loss / len(train_loader)
+        optimizer.zero_grad()  #Starsts gradiients
+        output = model(data).view(-1)  #Age pred
+        loss = criterion(output, data.y)  #Compares pred vs real age
+        loss.backward() #Calculates gradients
+        optimizer.step() #Updates weights
+        total_loss += loss.item()   #Loss
+    return total_loss / len(train_loader)  #Mean loss per batch
 
 
 def evaluate(model, test_loader, criterion):
-    model.eval()
-    total_loss = 0
-    with torch.no_grad():
+    model.eval()  #Eval mode
+    total_loss = 0         
+    with torch.no_grad():        #Does not save gradiuients (more efficient)
         for data in test_loader:
             data = data.to(device)  # GPU
-            output = model(data).view(-1)
-            loss = criterion(output, data.y)
+            output = model(data).view(-1)               #Predicts age
+            loss = criterion(output, data.y)            
             total_loss += loss.item()
     return total_loss / len(test_loader)
 
 
 
 
-
-
-
+############### TRAINING CONFIGURATION ######################
 
 import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold
@@ -955,9 +953,9 @@ epochs = 300
 patience = 40  # Early stopping
 
 k =  7 # Folds
-batch_size = 6
+batch_size = 6   #Number of graphs processed per iteration
 
-# === Initialize losses ===
+# Initialize losses
 all_train_losses = []
 all_test_losses = []
 
@@ -968,13 +966,13 @@ all_early_stopping_epochs = []
 
 
 
-#Age bins 
+# Age bin preparation for stratified cross-validation to ensure balances distribution across folds
 
 
-# === Extract subject IDs from graph data
+#  Extract subject IDs from graph data
 graph_subject_ids = [data.subject_id for data in graph_data_list_addecode]
 
-# === Filter and sort metadata to match only graph subjects
+# Filter and sort metadata to match only graph subjects
 df_filtered = addecode_healthy_metadata_pca[
     addecode_healthy_metadata_pca["MRI_Exam_fixed"].isin(graph_subject_ids)
 ].copy()
@@ -990,14 +988,11 @@ print(" Final matched lengths:")
 print("  len(graphs):", len(graph_data_list_addecode))
 print("  len(metadata):", len(df_filtered))
 
-# === Extract final age vector and compute age bins
+#  Extract final age vector and compute age bins
 ages = df_filtered["age"].to_numpy()
-age_bins = pd.qcut(ages, q=5, labels=False)
+age_bins = pd.qcut(ages, q=5, labels=False)  #Divides ages in 5 groups with the same number of subjects each
 
 print(" Aligned bins:", len(age_bins))
-
-
-
 
 
 
@@ -1007,8 +1002,10 @@ print(" Aligned bins:", len(age_bins))
 skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
 
 
-repeats_per_fold = 10  
+repeats_per_fold = 10  # train the same fold 10 times
 
+
+############# CROSS-VALIDATION LOOP ##################
 
 for fold, (train_idx, test_idx) in enumerate(skf.split(graph_data_list_addecode, age_bins)):
 
@@ -1020,35 +1017,43 @@ for fold, (train_idx, test_idx) in enumerate(skf.split(graph_data_list_addecode,
     fold_train_losses = []
     fold_test_losses = []
 
+    # Repeated training 10 times
     for repeat in range(repeats_per_fold):
         print(f'  > Repeat {repeat+1}/{repeats_per_fold}')
         
-        early_stop_epoch = None  
+        early_stop_epoch = None  #Store epooch when early stopping occurs
 
         seed_everything(42 + repeat)
 
         train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
         test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
+        #Inizialize a new model for each repeat
         model = BrainAgeGATv2(global_feat_dim=16).to(device)  
 
-        optimizer = torch.optim.AdamW(model.parameters(), lr=0.002, weight_decay=1e-4)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
-        criterion = torch.nn.SmoothL1Loss(beta=1)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.002, weight_decay=1e-4)  # lr- how big each update is , weight decay - avoid overfitting penalizing large weights
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)  #reduces lr every 20 epochs, multiplies the lr by 0.5 (large steps early, smaller later)
+        criterion = torch.nn.SmoothL1Loss(beta=1)  #Huber loss, for small errors it behaves like L2 loss (smooth), for big errors, it behaves like L1 loss (robust to outliers)
 
         best_loss = float('inf')
-        patience_counter = 0
+        patience_counter = 0        # early stopping counter
 
         train_losses = []
         test_losses = []
 
+        ########## EPOCH LOOP WITH EARLY STOPPING ##############
+        
         for epoch in range(epochs):
+            
+            #Train and evaluate for 1 epoch
             train_loss = train(model, train_loader, optimizer, criterion)
             test_loss = evaluate(model, test_loader, criterion)
 
+            #Save losses
             train_losses.append(train_loss)
             test_losses.append(test_loss)
 
+            # Check if validation loss improved
             if test_loss < best_loss:
                 best_loss = test_loss
                 patience_counter = 0
@@ -1061,16 +1066,18 @@ for fold, (train_idx, test_idx) in enumerate(skf.split(graph_data_list_addecode,
                     break
 
 
-            scheduler.step()
+            scheduler.step() # Update lr
 
+        # If not early stop, record full training length
         if early_stop_epoch is None:
                 early_stop_epoch = epochs  
         all_early_stopping_epochs.append((fold + 1, repeat + 1, early_stop_epoch))
 
-
+        # Store per repeat losses
         fold_train_losses.append(train_losses)
         fold_test_losses.append(test_losses)
 
+    #Store all repeats for curret fold
     all_train_losses.append(fold_train_losses)
     all_test_losses.append(fold_test_losses)
 
@@ -1094,7 +1101,7 @@ plt.grid(True)
 plt.show()
 
 
-# ==== LEARNING CURVE PLOT (MEAN ± STD) ====
+#  LEARNING CURVE PLOT (MEAN ± STD) 
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -1109,7 +1116,7 @@ for epoch in range(epochs):
     for fold in range(k):
         for rep in range(repeats_per_fold):
             if epoch < len(all_train_losses[fold][rep]):
-                epoch_train.append(all_train_losses[fold][rep][epoch])
+                epoch_train.append(all_train_losses[fold][rep][epoch]) 
                 epoch_test.append(all_test_losses[fold][rep][epoch])
     avg_train.append((np.mean(epoch_train), np.std(epoch_train)))
     avg_test.append((np.mean(epoch_test), np.std(epoch_test)))
@@ -1145,35 +1152,35 @@ plt.show()
 from sklearn.metrics import mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
 
-# === Initialize storage ===
+#  Initialize storage
 fold_mae_list = []
 fold_r2_list = []
 all_y_true = []
 all_y_pred = []
 
-
+# Loop over cv folds
 for fold, (train_idx, test_idx) in enumerate(skf.split(graph_data_list_addecode, age_bins)):
     print(f'\n--- Evaluating Fold {fold+1}/{k} ---')
 
     test_data = [graph_data_list_addecode[i] for i in test_idx]
     test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
+    # Values across reps
     repeat_maes = []
     repeat_r2s = []
 
+    # Loop over repetitions
     for rep in range(repeats_per_fold):
         print(f"  > Repeat {rep+1}/{repeats_per_fold}")
 
+        #Load the trained model
         model = BrainAgeGATv2(global_feat_dim=16).to(device)  
 
-        model.load_state_dict(torch.load(f"model_fold_{fold+1}_rep_{rep+1}.pt"))  # Load correct model
+        model.load_state_dict(torch.load(f"model_fold_{fold+1}_rep_{rep+1}.pt"))  # Load correct model   # Loads all models saved for each rep and fold (70 models)
         model.eval()
 
-        # === Load model if saved by repetition ===
-        # model.load_state_dict(torch.load(f"model_fold_{fold+1}_rep_{rep+1}.pt"))
-
-        y_true_repeat = []
-        y_pred_repeat = []
+        y_true_repeat = [] #True ages for this repeat
+        y_pred_repeat = [] # Predicted
 
         with torch.no_grad():
             for data in test_loader:
@@ -1188,15 +1195,17 @@ for fold, (train_idx, test_idx) in enumerate(skf.split(graph_data_list_addecode,
         repeat_maes.append(mae)
         repeat_r2s.append(r2)
 
+        #Store all predictions globally
         all_y_true.extend(y_true_repeat)
         all_y_pred.extend(y_pred_repeat)
 
+    # Store fold level metrics
     fold_mae_list.append(repeat_maes)
     fold_r2_list.append(repeat_r2s)
 
     print(f">> Fold {fold+1} | MAE: {np.mean(repeat_maes):.2f} ± {np.std(repeat_maes):.2f} | R²: {np.mean(repeat_r2s):.2f} ± {np.std(repeat_r2s):.2f}")
 
-# === Final aggregate results ===
+# Final aggregate results 
 all_maes = np.array(fold_mae_list).flatten()
 all_r2s = np.array(fold_r2_list).flatten()
 
@@ -1207,43 +1216,40 @@ print("===================================================")
 
 
 
-###############################################################
-# PREDICTION & METRIC ANALYSIS — AD-DECODE  (SAVE TO CSV)
-###############################################################
+############### PREDICTION & METRIC ANALYSIS — AD-DECODE  (SAVE TO CSV) ###################
+
 import os
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from torch_geometric.loader import DataLoader
 
-# ---------------------------  CONFIG  ---------------------------
 OUT_DIR = "addecode_training_eval_plots_save"        # where CSV + figs go
 os.makedirs(OUT_DIR, exist_ok=True)
 
-BATCH_SIZE       = 6                                 # must match training
+BATCH_SIZE       = 6                       
 REPEATS_PER_FOLD = 10
-N_FOLDS          = 7                                 # k en tu entrenamiento
+N_FOLDS          = 7                          
 
-# ---------------------------------------------------------------
-# 1)  splits used in training
-# ---------------------------------------------------------------
-ages = np.array([data.y.item() for data in graph_data_list_addecode])  # 71 elementos
-age_bins = pd.qcut(ages, q=5, labels=False)                            # 71 elementos
 
+#   splits used in training
+
+ages = np.array([data.y.item() for data in graph_data_list_addecode])  # 71 elements
+age_bins = pd.qcut(ages, q=5, labels=False)                            
 skf_addecode = StratifiedKFold(
     n_splits=N_FOLDS, shuffle=True, random_state=42)
 
-# ---------------------------------------------------------------
-# 2) lists
-# ---------------------------------------------------------------
+
+#  lists
+
 fold_mae, fold_rmse, fold_r2       = [], [], []
 all_y_true, all_y_pred             = [], []
 all_subject_ids, fold_tags         = [], []
 repeat_tags                        = []
 
-# ---------------------------------------------------------------
-# 3) Loop per fold × repeat
-# ---------------------------------------------------------------
+
+# Loop per fold × repeat
+
 for fold, (train_idx, test_idx) in enumerate(skf_addecode.split(
         graph_data_list_addecode, age_bins)):
 
@@ -1257,13 +1263,13 @@ for fold, (train_idx, test_idx) in enumerate(skf_addecode.split(
     for rep in range(REPEATS_PER_FOLD):
         print(f"  > Repeat {rep+1}/{REPEATS_PER_FOLD}")
 
-        # ----- Load trained model -----
+        #  Load trained model
         model = BrainAgeGATv2(global_feat_dim=16).to(device)
         ckpt_path = f"model_fold_{fold+1}_rep_{rep+1}.pt"
-        model.load_state_dict(torch.load(ckpt_path))
+        model.load_state_dict(torch.load(ckpt_path))               # Loads all models saved for each rep and fold (70 models)
         model.eval()
 
-        # ----- Predictions -----
+        #  Predictions
         y_true, y_pred, subj_ids = [], [], []
 
         with torch.no_grad():
@@ -1276,7 +1282,7 @@ for fold, (train_idx, test_idx) in enumerate(skf_addecode.split(
                 y_true.extend(trues.cpu().tolist())
                 subj_ids.extend([str(s) for s in batch.subject_id])
 
-        # ----- Metrics -----
+        #  Metrics
         mae  = mean_absolute_error(y_true, y_pred)
         rmse = mean_squared_error(y_true, y_pred, squared=False)
         r2   = r2_score(y_true, y_pred)
@@ -1285,14 +1291,14 @@ for fold, (train_idx, test_idx) in enumerate(skf_addecode.split(
         rmse_rep.append(rmse)
         r2_rep.append(r2)
 
-        # ----- Save in lists -----
+        # Save in lists
         all_y_true.extend(y_true)
         all_y_pred.extend(y_pred)
         all_subject_ids.extend(subj_ids)
         fold_tags.extend([fold+1] * len(y_true))
         repeat_tags.extend([rep+1] * len(y_true))
 
-    # ----- Summary per fold -----
+    # Summary per fold 
     fold_mae.append(mae_rep)
     fold_rmse.append(rmse_rep)
     fold_r2.append(r2_rep)
@@ -1302,9 +1308,9 @@ for fold, (train_idx, test_idx) in enumerate(skf_addecode.split(
           f"RMSE: {np.mean(rmse_rep):.2f} ± {np.std(rmse_rep):.2f} | "
           f"R²:   {np.mean(r2_rep):.2f} ± {np.std(r2_rep):.2f}")
 
-# ---------------------------------------------------------------
-# 4) Global metrics
-# ---------------------------------------------------------------
+
+#  Global metrics
+
 all_mae  = np.concatenate(fold_mae)
 all_rmse = np.concatenate(fold_rmse)
 all_r2   = np.concatenate(fold_r2)
@@ -1315,9 +1321,9 @@ print(f"Global RMSE: {all_rmse.mean():.2f} ± {all_rmse.std():.2f}")
 print(f"Global R²:   {all_r2.mean():.2f} ± {all_r2.std():.2f}")
 print("=============================================================\n")
 
-# ---------------------------------------------------------------
+
 # 5) Save CSV with all predictions
-# ---------------------------------------------------------------
+
 df_preds_addecode = pd.DataFrame({
     "Subject_ID":    all_subject_ids,
     "Real_Age":      all_y_true,
@@ -1379,19 +1385,14 @@ plt.show()
 
 #Evaluation is complete
 
-
-
 #Now we are going to train a model on all healthy subjects, 
-#and we save it to use it on the MCI and AD (excluded) and this healthy (it is okay because we already validated)
+#and we save it to use it on the MCI and AD (excluded) and this healthy (it is okay because these predictions wont be for model evaluation, we already validated)
 
 
 
 
+################ FINAL MODEL TRAINING ON ALL HEALTHY ###################
 
-
-######################################
-# FINAL MODEL TRAINING ON ALL HEALTHY
-######################################
 
 print("\n=== Training Final Model on All Healthy Subjects ===")
 
@@ -1438,7 +1439,7 @@ print("\nFinal model saved as 'model_trained_on_all_healthy.pt'")
 
 
 #We selected 100 epochs for the final model training based on the early stopping results observed during cross-validation. 
-#Most repetitions across folds stopped between 45 and 80 epochs, with a few extending beyond 100
+#Most repetitions across folds stopped between 45 and 80 epochs
 
 
 
