@@ -24,7 +24,7 @@ import numpy as np
 import networkx as nx  # For graph-level metrics
 
 
-# === Set seed for reproducibility ===
+#  Set seed for reproducibility
 def seed_everything(seed=42):
     random.seed(seed)
     np.random.seed(seed)
@@ -38,6 +38,7 @@ def seed_everything(seed=42):
 seed_everything(42)
 
 ###################### Connectomes ############################
+
 print("ADNI CONNECTOMES")
 
 
@@ -202,7 +203,7 @@ print()
 
 
 
-# === Filter connectomes to include only those from healthy controls (CN) ===
+#  Filter connectomes to include only those from healthy controls (CN) 
 matched_connectomes_healthy_adni = {
     row["connectome_key"]: adni_connectomes[row["connectome_key"]]
     for _, row in df_matched_adni_healthy.iterrows()
@@ -250,10 +251,10 @@ from scipy.stats import zscore
 import networkx as nx
 from torch_geometric.data import Data
 
-# === Get valid subjects (those with both connectome and metadata matched) ===
+#  Get valid subjects (those with both connectome and metadata matched) 
 valid_subjects = set(df_matched_adni_healthy["connectome_key"])
 
-# === Load FA data from TSV ===
+#  Load FA data from CSV 
 fa_path = "/home/bas/Desktop/Paula Pretraining/UTF-8ADNI_Regional_Stats/ADNI_Regional_Stats/ADNI_studywide_stats_for_fa.txt"
 df_fa = pd.read_csv(fa_path, sep="\t")[1:]
 df_fa = df_fa[df_fa["ROI"] != "0"].reset_index(drop=True)
@@ -263,7 +264,7 @@ df_fa_transposed.columns = [f"ROI_{i+1}" for i in range(df_fa_transposed.shape[1
 df_fa_transposed.index.name = "subject_id"
 df_fa_transposed = df_fa_transposed.astype(float)
 
-# === Load Volume data ===
+#  Load Volume data 
 vol_path = "/home/bas/Desktop/Paula Pretraining/UTF-8ADNI_Regional_Stats/ADNI_Regional_Stats/ADNI_studywide_stats_for_volume.txt"
 df_vol = pd.read_csv(vol_path, sep="\t")[1:]
 df_vol = df_vol[df_vol["ROI"] != "0"].reset_index(drop=True)
@@ -273,7 +274,7 @@ df_vol_transposed.columns = [f"ROI_{i+1}" for i in range(df_vol_transposed.shape
 df_vol_transposed.index.name = "subject_id"
 df_vol_transposed = df_vol_transposed.astype(float)
 
-# === Combine FA and Volume for each subject into a tensor [84, 2] ===
+#  Combine FA and Volume for each subject into a tensor [84, 2] 
 multimodal_features_dict = {}
 for subj in df_fa_transposed.index:
     if subj in df_vol_transposed.index:
@@ -282,7 +283,7 @@ for subj in df_fa_transposed.index:
         stacked = torch.stack([fa, vol], dim=1)
         multimodal_features_dict[subj] = stacked
 
-# === Normalize node features across subjects (node-wise) ===
+#  Normalize node features across subjects (node-wise) 
 def normalize_multimodal_nodewise(feature_dict):
     all_features = torch.stack(list(feature_dict.values()))
     means = all_features.mean(dim=0)
@@ -293,7 +294,7 @@ def normalize_multimodal_nodewise(feature_dict):
 normalized_node_features_dict = normalize_multimodal_nodewise(multimodal_features_dict)
 
 
-# === Matrix to graph function ===
+#  Matrix to graph function 
 def matrix_to_graph(matrix, device, subject_id, node_features_dict):
     indices = np.triu_indices(84, k=1)
     edge_index = torch.tensor(np.vstack(indices), dtype=torch.long, device=device)
@@ -305,7 +306,7 @@ def matrix_to_graph(matrix, device, subject_id, node_features_dict):
 
 
 
-# === Threshold function ===
+#  Threshold function 
 def threshold_connectome(matrix, percentile=95):
     matrix_np = matrix.to_numpy()
     mask = ~np.eye(matrix_np.shape[0], dtype=bool)
@@ -314,14 +315,14 @@ def threshold_connectome(matrix, percentile=95):
     thresholded_np = np.where(matrix_np >= threshold_value, matrix_np, 0)
     return pd.DataFrame(thresholded_np, index=matrix.index, columns=matrix.columns)
 
-# === Apply threshold and log transform ===
+#  Apply threshold and log transform 
 log_thresholded_connectomes_adni = {}
 for subject, matrix in matched_connectomes_healthy_adni.items():
     thresholded_matrix = threshold_connectome(matrix, percentile=95)
     log_matrix = np.log1p(thresholded_matrix)
     log_thresholded_connectomes_adni[subject] = pd.DataFrame(log_matrix, index=matrix.index, columns=matrix.columns)
 
-# === Graph metric functions ===
+#  Graph metric functions 
 def compute_clustering_coefficient(matrix):
     G = nx.from_numpy_array(matrix.to_numpy())
     for u, v, d in G.edges(data=True):
@@ -352,7 +353,7 @@ def compute_local_efficiency(matrix):
         d["weight"] = matrix.iloc[u, v]
     return nx.local_efficiency(G)
 
-# === Add metrics to metadata ===
+# Add metrics to metadata 
 adni_healthy_metadata = df_matched_adni_healthy.reset_index(drop=True)
 adni_healthy_metadata["Clustering_Coeff"] = np.nan
 adni_healthy_metadata["Path_Length"] = np.nan
@@ -376,7 +377,7 @@ for subject, matrix_log in log_thresholded_connectomes_adni.items():
 
 
 
-# === Label encode and normalize ===
+#  Label encode and normalize 
 adni_healthy_metadata["sex_encoded"] = LabelEncoder().fit_transform(adni_healthy_metadata["Sex"].astype(str))
 adni_healthy_metadata["genotype"] = LabelEncoder().fit_transform(
     adni_healthy_metadata["APOE A1"].astype(str) + "_" + adni_healthy_metadata["APOE A2"].astype(str)
@@ -392,7 +393,7 @@ adni_healthy_metadata[numerical_cols] = adni_healthy_metadata[numerical_cols].ap
 
 
 
-# === Build global feature tensors ===
+#  Build global feature tensors 
 subject_to_demographic_tensor = {
     row["connectome_key"]: torch.tensor([
         row["sex_encoded"],
@@ -653,10 +654,10 @@ all_early_stopping_epochs = []
 
 
 
-# === Extract ages from metadata and create stratification bins ===
+#  Extract ages from metadata and create stratification bins
 ages = df_matched_adni_healthy["Age"].to_numpy()
 
-# === Create age bins for stratification ===
+# Create age bins for stratification 
 age_bins = pd.qcut(ages, q=5, labels=False)
 
 # Stratified split by age bins
@@ -755,7 +756,7 @@ plt.show()
 
 
 
-# ==== LEARNING CURVE PLOT (MEAN ± STD) ====
+#  LEARNING CURVE PLOT (MEAN ± STD) 
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -861,7 +862,7 @@ for fold, (train_idx, test_idx) in enumerate(skf.split(graph_data_list_adni, age
           f"R²: {np.mean(repeat_r2s):.2f} ± {np.std(repeat_r2s):.2f} | "
           f"RMSE: {np.mean(repeat_rmses):.2f} ± {np.std(repeat_rmses):.2f}")
 
-# === Final aggregate results ===
+#  Final aggregate results 
 all_maes = np.array(fold_mae_list).flatten()
 all_r2s = np.array(fold_r2_list).flatten()
 all_rmses = np.array(fold_rmse_list).flatten()
@@ -918,7 +919,7 @@ plt.show()
 
 from torch_geometric.loader import DataLoader
 
-# === Full training with all ADNI data ===
+#  Full training with all ADNI data 
 train_loader = DataLoader(graph_data_list_adni, batch_size=6, shuffle=True)
 
 # Initialize model and optimizer
@@ -927,19 +928,15 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=0.002, weight_decay=1e-4)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
 criterion = torch.nn.SmoothL1Loss(beta=1)
 
-# === Training loop ===
-
+#  Training loop 
 
 epochs = 150 
 
-# seeing folds from cv
-#Mediana de early stopping: ~95
-
-#Media aproximada: ~100
-
-#Percentil 75: ~120–130
-
-#Máximo: 215 
+# seeing folds from cv to choose epochs
+# Median of the early stopping: ~95
+# Mean : ~100
+# Percentile 75: ~120–130
+# Max: 215 
 
 
 train_losses = []
@@ -951,11 +948,11 @@ for epoch in range(epochs):
     scheduler.step()
     print(f"Epoch {epoch+1}/{epochs} | Train Loss: {loss:.4f}")
 
-# === Save final model ===
+#  Save final model 
 torch.save(model.state_dict(), "brainage_adni_pretrained.pt")
 print("\n Pretrained model saved as 'brainage_adni_pretrained.pt'")
 
-# === Plot learning curve ===
+#  Plot learning curve 
 plt.figure(figsize=(8, 5))
 plt.plot(train_losses, label="Train Loss")
 plt.xlabel("Epoch")
@@ -971,17 +968,4 @@ plt.show()
 
 
 
-model.eval()
-all_preds = []
-all_labels = []
-
-with torch.no_grad():
-    for data in train_loader:
-        data = data.to(device)
-        pred = model(data).view(-1)
-        all_preds.extend(pred.cpu().tolist())
-        all_labels.extend(data.y.cpu().tolist())
-
-mae = mean_absolute_error(all_labels, all_preds)
-print(f"MAE en entrenamiento completo: {mae:.2f}")
 
