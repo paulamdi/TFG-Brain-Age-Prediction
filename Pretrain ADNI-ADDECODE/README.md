@@ -63,7 +63,7 @@ The goal is to **reuse the structural representations learned from ADNI**, while
      - `fc.0`: the input dimensionality of the final MLP has changed (AD-DECODE includes more global features).
 
 3. **Weight transfer**:
-   - All other layers — including the 4 GATv2 layers and remaining parts of the MLP — **retain the pretrained weights** from ADNI.
+   - All other layers, including the 4 GATv2 layers and remaining parts of the MLP, **retain the pretrained weights** from ADNI.
    - These weights encode generalizable structural patterns related to healthy brain aging.
 
 4. **Full Fine-Tuning (No Freezing)**:
@@ -87,7 +87,7 @@ The fine-tuning phase allows the model to **refine these representations**, adju
 - **New node features** (MD)
 - **Additional global context** (blood pressure, PCA genes)
 - **Wider and younger age ranges**
-- **Potential pathology-related variation**
+
 
 
 
